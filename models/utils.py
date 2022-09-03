@@ -111,7 +111,8 @@ def sample_components(model, steps, x = None, x_t = None, mapping_cond=None, une
   device = torch.device('cuda')
   if x==None or x_t==None:
     x = torch.randn([batch_num, 3, model.in_res, model.in_res], device=device)
-    x_t = 0
+    x_t = 1
+    
   t_step = x.new_ones([x.shape[0]])
 
   timeline = torch.linspace(x_t, 0, steps + 1)[:-1]

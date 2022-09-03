@@ -1,7 +1,7 @@
 from torch import nn
 import torch
 
-from model.nets import FourierTimesteps, MappingNet, UNet
+from models.nets import FourierTimesteps, MappingNet, UNet
 
 from math import pi
 

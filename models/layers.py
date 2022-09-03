@@ -2,6 +2,8 @@ from torch import nn
 from torch.nn.functional import group_norm
 import torch
 
+from models.fourier_modulation import ModulatedModule, Modulated_Conv
+
 from math import pi
 
 class ResidualBlock(nn.Module):
@@ -16,12 +18,28 @@ class ResidualBlock(nn.Module):
 class ConditionedModule(nn.Module):
   pass
 
+
+
 class ConditionedSequential(nn.Sequential, ConditionedModule):
   def forward(self, input, cond):
     for module in self:
       # print(module)
       if isinstance(module, ConditionedModule):
         input = module(input, cond)
+      else:
+        input = module(input)
+    return input
+
+class ConditionedModSequential(nn.Sequential, ConditionedModule, ModulatedModule):
+  def forward(self, input, cond, w):
+    for module in self:
+      # print(module)
+      if isinstance(module, ConditionedModule) and isinstance(module, ModulatedModule):
+        input = module(input, cond, w)
+      elif isinstance(module, ConditionedModule):
+        input = module(input, cond)
+      elif isinstance(module, ModulatedModule):
+        input = module(input, w)
       else:
         input = module(input)
     return input
@@ -36,6 +54,15 @@ class ConditionedResidualBlock(ConditionedModule):
     skip = self.skip(input, cond) if isinstance(self.skip, ConditionedModule) else self.skip(input)
     return self.main(input, cond) + skip
 
+class ConditionedModResidualBlock(ConditionedModule, ModulatedModule):
+  def __init__(self, main, skip=None):
+    super().__init__()
+    self.main = ConditionedModSequential(*main)
+    self.skip = skip if skip else nn.Identity()
+  def forward(self, input, cond, w):
+    skip = self.skip(input, cond) if isinstance(self.skip, ConditionedModule) else self.skip(input)
+    return self.main(input, cond, w) + skip
+
 class ResConvBlock(ConditionedResidualBlock):
   def __init__(self, in_features, c_in, c_out, group_norm_size = 32, is_last=False):
     skip = None if c_in == c_out else nn.Conv2d(c_in, c_out, 1, bias=False)
@@ -47,6 +74,22 @@ class ResConvBlock(ConditionedResidualBlock):
 
       AdaGN(in_features, c_out, max(1, c_out // group_norm_size)),
       nn.Conv2d(c_out, c_out, 3, stride = 1, padding = 1),
+      nn.Dropout2d(0.1, inplace=True),
+      nn.GELU()
+
+    ], skip)
+
+class ResModConvBlock(ConditionedModResidualBlock):
+  def __init__(self, in_features, c_in, c_out, w_dim=512, group_norm_size = 32, is_last=False):
+    skip = None if c_in == c_out else nn.Conv2d(c_in, c_out, 1, bias=False)
+    super().__init__([
+        
+      AdaGN(in_features, c_in, max(1, c_in // group_norm_size)),
+      nn.GELU(),
+      Modulated_Conv(c_in, c_out, w_dim = w_dim, kernel_size = 3),
+
+      AdaGN(in_features, c_out, max(1, c_out // group_norm_size)),
+      Modulated_Conv(c_out, c_out, w_dim = w_dim, kernel_size = 3),
       nn.Dropout2d(0.1, inplace=True),
       nn.GELU()
 
